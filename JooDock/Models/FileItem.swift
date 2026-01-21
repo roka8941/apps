@@ -7,13 +7,15 @@ struct FileItem: Identifiable, Codable, Hashable {
     var path: String
     var groupId: UUID?
     var addedAt: Date
+    var lastAccessedAt: Date?
 
-    init(id: UUID = UUID(), name: String, path: String, groupId: UUID? = nil, addedAt: Date = Date()) {
+    init(id: UUID = UUID(), name: String, path: String, groupId: UUID? = nil, addedAt: Date = Date(), lastAccessedAt: Date? = nil) {
         self.id = id
         self.name = name
         self.path = path
         self.groupId = groupId
         self.addedAt = addedAt
+        self.lastAccessedAt = lastAccessedAt
     }
 
     // MARK: - Computed Properties

@@ -3,8 +3,6 @@ import SwiftUI
 struct FileRowView: View {
     let file: FileItem
     let onOpen: () -> Void
-    let onPreview: () -> Void
-    let onReveal: () -> Void
     let onRemove: () -> Void
 
     @State private var isHovered = false
@@ -30,20 +28,10 @@ struct FileRowView: View {
 
             Spacer()
 
-            // Quick actions (visible on hover)
+            // Remove button (visible on hover)
             if isHovered {
-                HStack(spacing: 4) {
-                    IconButton(icon: "eye", tooltip: "Preview") {
-                        onPreview()
-                    }
-
-                    IconButton(icon: "folder", tooltip: "Show in Finder") {
-                        onReveal()
-                    }
-
-                    IconButton(icon: "xmark", tooltip: "Remove", isDestructive: true) {
-                        onRemove()
-                    }
+                IconButton(icon: "xmark", tooltip: "Remove", isDestructive: true) {
+                    onRemove()
                 }
                 .transition(.opacity)
             }
@@ -60,15 +48,13 @@ struct FileRowView: View {
                 isHovered = hovering
             }
         }
-        .onTapGesture(count: 2) {
+        .onTapGesture {
             onOpen()
         }
         .contextMenu {
             Button("Open") { onOpen() }
-            Button("Preview") { onPreview() }
-            Button("Show in Finder") { onReveal() }
             Divider()
-            Button("Remove from JooDock", role: .destructive) { onRemove() }
+            Button("Remove", role: .destructive) { onRemove() }
         }
         .opacity(file.exists ? 1.0 : 0.5)
     }

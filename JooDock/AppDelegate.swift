@@ -1,11 +1,21 @@
 import AppKit
 import SwiftUI
 
+// Custom window that can accept keyboard input
+class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var popupWindow: NSWindow?
     private var hoverMonitor: HoverMonitor?
     private var popupHostingView: NSHostingView<PopupView>?
+    private var mouseExitMonitor: Any?
+    private var mouseClickMonitor: Any?
+    private var keyMonitor: Any?
+    private var hideTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusItem()
@@ -45,7 +55,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let hostingView = NSHostingView(rootView: popupView)
         popupHostingView = hostingView
 
-        let window = NSWindow(
+        let window = KeyableWindow(
             contentRect: NSRect(x: 0, y: 0, width: 320, height: 450),
             styleMask: [.borderless],
             backing: .buffered,
@@ -58,6 +68,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         window.level = .floating
         window.hasShadow = true
         window.collectionBehavior = [.canJoinAllSpaces, .stationary]
+        window.acceptsMouseMovedEvents = true
 
         popupWindow = window
     }
@@ -92,27 +103,100 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func hidePopup() {
         popupWindow?.orderOut(nil)
+        hideTimer?.invalidate()
+        hideTimer = nil
+        checkTimer?.invalidate()
+        checkTimer = nil
+
+        // Reset hover state so it can trigger again
+        hoverMonitor?.resetHoverState()
+
+        // Remove all monitors
+        if let monitor = mouseExitMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseExitMonitor = nil
+        }
+        if let monitor = mouseClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseClickMonitor = nil
+        }
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
     }
 
+    private var checkTimer: Timer?
+
     private func setupMouseExitTracking() {
-        // Track when mouse leaves the popup area
-        NSEvent.addLocalMonitorForEvents(matching: .mouseMoved) { [weak self] event in
-            guard let window = self?.popupWindow, window.isVisible else {
-                return event
+        // Remove existing monitors
+        if let monitor = mouseExitMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseExitMonitor = nil
+        }
+        if let monitor = mouseClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            mouseClickMonitor = nil
+        }
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
+        checkTimer?.invalidate()
+
+        // Use a repeating timer to check mouse position every 0.5 seconds
+        checkTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            self?.checkMousePosition()
+        }
+
+        // ESC key to close
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // ESC key
+                self?.hidePopup()
+                return nil
             }
+            return event
+        }
 
+        // Click outside to close
+        mouseClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
+            guard let window = self?.popupWindow, window.isVisible else { return }
             let mouseLocation = NSEvent.mouseLocation
-            let windowFrame = window.frame.insetBy(dx: -20, dy: -20) // Add tolerance
+            let windowFrame = window.frame
 
-            // Check if mouse is in top area (hover zone) or popup
-            let screenHeight = NSScreen.main?.frame.height ?? 0
-            let isInTopZone = mouseLocation.y > screenHeight - 40
-
-            if !windowFrame.contains(mouseLocation) && !isInTopZone {
+            if !windowFrame.contains(mouseLocation) {
                 self?.hidePopup()
             }
+        }
+    }
 
-            return event
+    private func checkMousePosition() {
+        guard let window = popupWindow, window.isVisible else {
+            hideTimer?.invalidate()
+            hideTimer = nil
+            return
+        }
+
+        let mouseLocation = NSEvent.mouseLocation
+        let windowFrame = window.frame.insetBy(dx: -30, dy: -30) // Add tolerance
+
+        // Check if mouse is in top area (hover zone) or popup
+        let screenHeight = NSScreen.main?.frame.height ?? 0
+        let isInTopZone = mouseLocation.y > screenHeight - 50
+
+        let isInsideArea = windowFrame.contains(mouseLocation) || isInTopZone
+
+        if isInsideArea {
+            // Mouse is inside - cancel hide timer
+            hideTimer?.invalidate()
+            hideTimer = nil
+        } else {
+            // Mouse is outside - start 2 second timer if not already running
+            if hideTimer == nil {
+                hideTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: false) { [weak self] _ in
+                    self?.hidePopup()
+                }
+            }
         }
     }
 }

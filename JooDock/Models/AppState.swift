@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 class AppState: ObservableObject {
     static let shared = AppState()
@@ -7,13 +8,20 @@ class AppState: ObservableObject {
     @Published var files: [FileItem] = []
     @Published var groups: [FileGroup] = []
     @Published var searchQuery: String = ""
+    @Published var recentFiles: [FileItem] = []
+    @Published var searchResults: [FileItem] = []
+    @Published var isSearching: Bool = false
 
     private let storage = FileStorage.shared
     private var cancellables = Set<AnyCancellable>()
+    private var metadataQuery: NSMetadataQuery?
+    private var searchMetadataQuery: NSMetadataQuery?
 
     private init() {
         loadData()
         setupAutoSave()
+        loadRecentFiles()
+        setupSearchObserver()
     }
 
     // MARK: - Computed Properties
@@ -80,11 +88,21 @@ class AppState: ObservableObject {
     }
 
     func openFile(_ file: FileItem) {
+        // Update last accessed time
+        if let index = files.firstIndex(where: { $0.id == file.id }) {
+            files[index].lastAccessedAt = Date()
+        }
         NSWorkspace.shared.open(file.url)
     }
 
     func revealInFinder(_ file: FileItem) {
-        NSWorkspace.shared.activateFileViewerSelecting([file.url])
+        if file.isDirectory {
+            // 폴더인 경우: 폴더를 열어서 내부 파일들 보기
+            NSWorkspace.shared.open(file.url)
+        } else {
+            // 파일인 경우: 부모 폴더에서 파일 선택
+            NSWorkspace.shared.activateFileViewerSelecting([file.url])
+        }
     }
 
     // MARK: - Group Operations
@@ -147,5 +165,134 @@ class AppState: ObservableObject {
                 self?.storage.saveGroups(groups)
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: - Recent Files (Spotlight Query)
+
+    private func loadRecentFiles() {
+        metadataQuery = NSMetadataQuery()
+        guard let query = metadataQuery else { return }
+
+        // 최근 7일 이내 사용된 파일 검색
+        let sevenDaysAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
+        query.predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", sevenDaysAgo as CVarArg)
+        query.sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+        query.searchScopes = [NSMetadataQueryLocalComputerScope]
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(queryDidFinish),
+            name: .NSMetadataQueryDidFinishGathering,
+            object: query
+        )
+
+        query.start()
+    }
+
+    @objc private func queryDidFinish(_ notification: Notification) {
+        guard let query = notification.object as? NSMetadataQuery else { return }
+        query.stop()
+
+        var items: [FileItem] = []
+        let resultCount = min(query.resultCount, 10)  // 최대 10개
+
+        for i in 0..<resultCount {
+            if let item = query.result(at: i) as? NSMetadataItem,
+               let path = item.value(forAttribute: kMDItemPath as String) as? String {
+                let url = URL(fileURLWithPath: path)
+
+                // 숨김 파일이나 시스템 파일 제외
+                if !url.lastPathComponent.hasPrefix(".") &&
+                   !path.contains("/Library/") &&
+                   !path.contains("/.") {
+                    items.append(FileItem(
+                        name: url.lastPathComponent,
+                        path: path
+                    ))
+                }
+
+                if items.count >= 5 { break }
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.recentFiles = items
+        }
+    }
+
+    // MARK: - Spotlight Search
+
+    private func setupSearchObserver() {
+        $searchQuery
+            .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
+            .removeDuplicates()
+            .sink { [weak self] query in
+                self?.performSpotlightSearch(query: query)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func performSpotlightSearch(query: String) {
+        // 기존 검색 중지
+        searchMetadataQuery?.stop()
+
+        // 빈 쿼리면 검색 결과 초기화
+        guard !query.isEmpty else {
+            isSearching = false
+            searchResults = []
+            return
+        }
+
+        isSearching = true
+
+        searchMetadataQuery = NSMetadataQuery()
+        guard let metaQuery = searchMetadataQuery else { return }
+
+        // 파일명에 검색어가 포함된 파일/폴더 검색
+        metaQuery.predicate = NSPredicate(format: "kMDItemFSName CONTAINS[cd] %@", query)
+        metaQuery.sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
+        metaQuery.searchScopes = [NSMetadataQueryLocalComputerScope]
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(searchQueryDidFinish),
+            name: .NSMetadataQueryDidFinishGathering,
+            object: metaQuery
+        )
+
+        metaQuery.start()
+    }
+
+    @objc private func searchQueryDidFinish(_ notification: Notification) {
+        guard let query = notification.object as? NSMetadataQuery else { return }
+        query.stop()
+
+        var items: [FileItem] = []
+        let resultCount = min(query.resultCount, 50)  // 최대 50개
+
+        for i in 0..<resultCount {
+            if let item = query.result(at: i) as? NSMetadataItem,
+               let path = item.value(forAttribute: kMDItemPath as String) as? String {
+                let url = URL(fileURLWithPath: path)
+
+                // 숨김 파일이나 시스템 파일 제외
+                if !url.lastPathComponent.hasPrefix(".") &&
+                   !path.contains("/Library/") &&
+                   !path.contains("/.") &&
+                   !path.contains("/System/") {
+                    items.append(FileItem(
+                        name: url.lastPathComponent,
+                        path: path
+                    ))
+                }
+
+                if items.count >= 20 { break }  // UI에 표시할 최대 20개
+            }
+        }
+
+        DispatchQueue.main.async {
+            self.searchResults = items
+            self.isSearching = false
+        }
     }
 }

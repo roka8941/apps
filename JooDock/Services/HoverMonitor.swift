@@ -8,9 +8,9 @@ class HoverMonitor {
     private let onHover: (Bool) -> Void
 
     // Settings
-    @AppStorage("hoverZoneWidth") private var zoneWidth: Double = 200
-    @AppStorage("hoverZoneHeight") private var zoneHeight: Double = 30
-    @AppStorage("hoverDelay") private var hoverDelay: Double = 0.3
+    @UserDefault("hoverZoneWidth") private var zoneWidth: Double = 300
+    @UserDefault("hoverZoneHeight") private var zoneHeight: Double = 50
+    @UserDefault("hoverDelay") private var hoverDelay: Double = 0.3
 
     init(onHover: @escaping (Bool) -> Void) {
         self.onHover = onHover
@@ -31,6 +31,13 @@ class HoverMonitor {
             NSEvent.removeMonitor(monitor)
             eventMonitor = nil
         }
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+    }
+
+    /// 팝업이 닫힐 때 호출 - 상태 리셋
+    func resetHoverState() {
+        isHovering = false
         hoverTimer?.invalidate()
         hoverTimer = nil
     }
@@ -73,9 +80,9 @@ class HoverMonitor {
     }
 }
 
-// AppStorage wrapper for non-SwiftUI context
+// UserDefault wrapper for non-SwiftUI context
 @propertyWrapper
-struct AppStorage<Value> {
+struct UserDefault<Value> {
     let key: String
     let defaultValue: Value
     let store: UserDefaults

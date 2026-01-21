@@ -4,13 +4,12 @@ struct GroupSection: View {
     let group: FileGroup
     let files: [FileItem]
     let onFileOpen: (FileItem) -> Void
-    let onFilePreview: (FileItem) -> Void
-    let onFileReveal: (FileItem) -> Void
     let onFileRemove: (FileItem) -> Void
     let onFileDrop: ([URL]) -> Void
     let onToggleExpand: () -> Void
     let onRename: (String) -> Void
     let onDelete: () -> Void
+    var onAddFileClick: (() -> Void)? = nil
 
     @State private var isEditing = false
     @State private var editedName = ""
@@ -20,14 +19,12 @@ struct GroupSection: View {
         Section {
             if group.isExpanded || group.isUngrouped {
                 if files.isEmpty {
-                    EmptyGroupView(isDraggingOver: isDraggingOver)
+                    EmptyGroupView(isDraggingOver: isDraggingOver, onTap: onAddFileClick)
                 } else {
                     ForEach(files) { file in
                         FileRowView(
                             file: file,
                             onOpen: { onFileOpen(file) },
-                            onPreview: { onFilePreview(file) },
-                            onReveal: { onFileReveal(file) },
                             onRemove: { onFileRemove(file) }
                         )
                     }
@@ -41,7 +38,8 @@ struct GroupSection: View {
                 editedName: $editedName,
                 onToggleExpand: onToggleExpand,
                 onRename: onRename,
-                onDelete: onDelete
+                onDelete: onDelete,
+                onAddFiles: onAddFileClick
             )
         }
         .onDrop(of: [.fileURL], isTargeted: $isDraggingOver) { providers in
@@ -78,6 +76,7 @@ struct GroupHeaderView: View {
     let onToggleExpand: () -> Void
     let onRename: (String) -> Void
     let onDelete: () -> Void
+    var onAddFiles: (() -> Void)? = nil
 
     var body: some View {
         HStack(spacing: 6) {
@@ -116,6 +115,11 @@ struct GroupHeaderView: View {
 
             if !group.isUngrouped {
                 Menu {
+                    Button {
+                        onAddFiles?()
+                    } label: {
+                        Label("Add Files", systemImage: "plus")
+                    }
                     Button("Rename") {
                         editedName = group.name
                         isEditing = true
@@ -142,6 +146,7 @@ struct GroupHeaderView: View {
 
 struct EmptyGroupView: View {
     let isDraggingOver: Bool
+    var onTap: (() -> Void)? = nil
 
     var body: some View {
         HStack {
@@ -150,7 +155,7 @@ struct EmptyGroupView: View {
                 Image(systemName: "plus.circle.dashed")
                     .font(.system(size: 20))
                     .foregroundColor(.secondary.opacity(0.5))
-                Text("Drop files here")
+                Text("Drop or click to add files")
                     .font(.system(size: 11))
                     .foregroundColor(.secondary.opacity(0.7))
             }
@@ -164,5 +169,9 @@ struct EmptyGroupView: View {
         )
         .background(isDraggingOver ? Color.accentColor.opacity(0.1) : Color.clear)
         .cornerRadius(8)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            onTap?()
+        }
     }
 }
