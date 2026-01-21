@@ -6,7 +6,7 @@
 
 | 앱 | 플랫폼 | 설명 | 상태 |
 |----|--------|------|------|
-| [JooDock](./JooDock/) | macOS | 화면 상단에서 자주 쓰는 파일에 빠르게 접근 | ✅ 완료 |
+| [JooDock-MacOS](./JooDock-MacOS/) | macOS | 화면 상단에서 자주 쓰는 파일에 빠르게 접근 | ✅ 완료 |
 | [JooDock-Windows](./JooDock-Windows/) | Windows | 화면 상단에서 자주 쓰는 파일에 빠르게 접근 | ✅ 완료 |
 
 ## JooDock

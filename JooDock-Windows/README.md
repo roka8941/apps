@@ -2,7 +2,7 @@
 
 Windows 화면 상단 중앙에 마우스를 올리면 자주 쓰는 파일에 빠르게 접근할 수 있는 앱입니다.
 
-> macOS 버전: [JooDock](../JooDock/)
+> macOS 버전: [JooDock-MacOS](../JooDock-MacOS/)
 
 ## 기능
 
