@@ -9,6 +9,7 @@ class KeyableWindow: NSWindow {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
+    private var statusItemMenu: NSMenu!
     private var popupWindow: NSWindow?
     private var hoverMonitor: HoverMonitor?
     private var popupHostingView: NSHostingView<PopupView>?
@@ -29,9 +30,50 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         if let button = statusItem.button {
             button.image = NSImage(systemSymbolName: "doc.on.doc", accessibilityDescription: "JooDock")
-            button.action = #selector(togglePopup)
+            // 좌클릭, 우클릭 모두 처리
+            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+            button.action = #selector(statusItemClicked)
             button.target = self
         }
+
+        // 우클릭 메뉴 설정
+        setupStatusItemMenu()
+    }
+
+    private func setupStatusItemMenu() {
+        statusItemMenu = NSMenu()
+
+        let openItem = NSMenuItem(title: "Open JooDock", action: #selector(openFromMenu), keyEquivalent: "")
+        openItem.target = self
+        statusItemMenu.addItem(openItem)
+
+        statusItemMenu.addItem(NSMenuItem.separator())
+
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        statusItemMenu.addItem(quitItem)
+    }
+
+    @objc private func statusItemClicked() {
+        guard let event = NSApp.currentEvent else { return }
+
+        if event.type == .rightMouseUp {
+            // 우클릭: 메뉴 표시
+            statusItem.menu = statusItemMenu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil  // 다음 좌클릭을 위해 메뉴 해제
+        } else {
+            // 좌클릭: 팝업 토글
+            togglePopup()
+        }
+    }
+
+    @objc private func openFromMenu() {
+        showPopup()
+    }
+
+    @objc private func quitApp() {
+        NSApp.terminate(nil)
     }
 
     // MARK: - Hover Monitor

@@ -24,6 +24,12 @@ class AppState: ObservableObject {
         setupSearchObserver()
     }
 
+    deinit {
+        metadataQuery?.stop()
+        searchMetadataQuery?.stop()
+        NotificationCenter.default.removeObserver(self)
+    }
+
     // MARK: - Computed Properties
 
     var filteredFiles: [FileItem] {
@@ -170,12 +176,26 @@ class AppState: ObservableObject {
     // MARK: - Recent Files (Spotlight Query)
 
     private func loadRecentFiles() {
+        // NSMetadataQuery는 반드시 Main Thread에서 실행되어야 함
+        DispatchQueue.main.async { [weak self] in
+            self?.setupRecentFilesQuery()
+        }
+    }
+
+    private func setupRecentFilesQuery() {
         metadataQuery = NSMetadataQuery()
         guard let query = metadataQuery else { return }
 
-        // 최근 7일 이내 사용된 파일 검색
-        let sevenDaysAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
-        query.predicate = NSPredicate(format: "kMDItemLastUsedDate > %@", sevenDaysAgo as CVarArg)
+        // Main queue에서 결과 콜백 받도록 설정
+        query.operationQueue = .main
+
+        // Finder Recents와 동일한 쿼리 (kMDItemLastUsedDate 사용)
+        // 파일만 검색 (폴더 제외), 최근 14일 이내
+        let twoWeeksAgo = Date().addingTimeInterval(-14 * 24 * 60 * 60)
+        query.predicate = NSPredicate(
+            format: "kMDItemLastUsedDate > %@ AND kMDItemContentTypeTree == 'public.content'",
+            twoWeeksAgo as CVarArg
+        )
         query.sortDescriptors = [NSSortDescriptor(key: "kMDItemLastUsedDate", ascending: false)]
         query.searchScopes = [NSMetadataQueryLocalComputerScope]
 
@@ -186,6 +206,7 @@ class AppState: ObservableObject {
             object: query
         )
 
+        print("[JooDock] Starting recent files query...")
         query.start()
     }
 
@@ -193,18 +214,31 @@ class AppState: ObservableObject {
         guard let query = notification.object as? NSMetadataQuery else { return }
         query.stop()
 
+        // Observer 해제 (메모리 누수 방지)
+        NotificationCenter.default.removeObserver(self, name: .NSMetadataQueryDidFinishGathering, object: query)
+
+        print("[JooDock] Query finished. Total results: \(query.resultCount)")
+
         var items: [FileItem] = []
-        let resultCount = min(query.resultCount, 10)  // 최대 10개
+        let resultCount = min(query.resultCount, 50)  // 필터링 전 더 많이 확인
 
         for i in 0..<resultCount {
             if let item = query.result(at: i) as? NSMetadataItem,
                let path = item.value(forAttribute: kMDItemPath as String) as? String {
                 let url = URL(fileURLWithPath: path)
 
-                // 숨김 파일이나 시스템 파일 제외
-                if !url.lastPathComponent.hasPrefix(".") &&
-                   !path.contains("/Library/") &&
-                   !path.contains("/.") {
+                // 숨김 파일, 시스템 파일, 앱, 캐시 등 제외
+                let isHidden = url.lastPathComponent.hasPrefix(".")
+                let isLibrary = path.contains("/Library/")
+                let isHiddenDir = path.contains("/.")
+                let isApp = path.hasSuffix(".app")
+                let isCache = path.contains("/Caches/") || path.contains("/cache/")
+                let isDerivedData = path.contains("/DerivedData/")
+                let isNodeModules = path.contains("/node_modules/")
+                let isGit = path.contains("/.git/")
+
+                if !isHidden && !isLibrary && !isHiddenDir && !isApp &&
+                   !isCache && !isDerivedData && !isNodeModules && !isGit {
                     items.append(FileItem(
                         name: url.lastPathComponent,
                         path: path
@@ -215,8 +249,10 @@ class AppState: ObservableObject {
             }
         }
 
+        print("[JooDock] Found \(items.count) recent files after filtering")
         DispatchQueue.main.async {
             self.recentFiles = items
+            print("[JooDock] recentFiles updated: \(items.map { $0.name })")
         }
     }
 
